@@ -1,10 +1,8 @@
 #!/usr/bin/env nextflow
 
-nextflow.enable.dsl=2
-
 params.reads = "${params.fasta_dir}/*.fastq.gz"
 params.outdir = "${params.arcdir}/results"
-params.pairs = "${params.fasta_dir}/*_R{1,2}.fastq.gz"
+params.pairs = "${params.fasta_dir}/*_R{1,2}_001.fastq.gz"
 
 
 process fastqc {
@@ -39,7 +37,8 @@ process fastp {
 
     script:
     """
-    echo "Running fastp on: ${reads.join(' ')}"
+    ls -lh "${reads[0]}"
+    ls -lh "${reads[1]}"
     fastp \
         --in1 "${reads[0]}" \
         --in2 "${reads[1]}" \
@@ -53,7 +52,7 @@ process fastp {
         --overrepresentation_analysis \
         --html "${sample_id}_fastp.html" \
         --json "${sample_id}_fastp.json" \
-        --threads ${task.cpus}
+        --thread ${task.cpus}
     """
 }
 
@@ -61,8 +60,10 @@ process fastp {
 workflow {
     read_fastas = Channel
         .fromPath(params.reads).collate(params.batch_size)
-    read_fastps = Channel.fromFilePairs(params.pairs, flat: true)
-      
+    read_fastps = Channel.fromFilePairs(params.pairs, flat: true) 
+        .map { sample_id, r1, r2 -> tuple(sample_id, [r1, r2]) }
+    read_fastps.view()
+  
     //fastqc(read_fastas)
     fastp(read_fastps)
 
