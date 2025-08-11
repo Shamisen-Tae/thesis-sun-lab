@@ -30,4 +30,6 @@ workflow {
         .fromPath(params.reads).collate(params.batch_size)
         
     fastqc(read_fastas)
+    
+
 }

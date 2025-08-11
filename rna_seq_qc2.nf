@@ -4,7 +4,7 @@ nextflow.enable.dsl=2
 
 params.reads = "${params.fasta_dir}/*.fastq.gz"
 params.outdir = "${params.arcdir}/results"
-params.pairs = "data/*_R{1,2}.fastq.gz"
+params.pairs = "${params.fasta_dir}/*_R{1,2}.fastq.gz"
 
 
 process fastqc {
