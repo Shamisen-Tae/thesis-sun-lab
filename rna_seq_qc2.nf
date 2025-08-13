@@ -1,9 +1,9 @@
 #!/usr/bin/env nextflow
 
 params.reads = "${params.fasta_dir}/*.fastq.gz"
-params.outdir = "${params.arcdir}/results"
+params.outdir = "${params.arc_dir}/results"
 params.pairs = "${params.fasta_dir}/*_R{1,2}_001.fastq.gz"
-
+params.genomeDir = "${params.arc_dir}/hg38_index"
 
 process fastqc {
     publishDir "${params.outdir}/fastqc", mode: 'move'
@@ -37,8 +37,6 @@ process fastp {
 
     script:
     """
-    ls -lh "${reads[0]}"
-    ls -lh "${reads[1]}"
     fastp \
         --in1 "${reads[0]}" \
         --in2 "${reads[1]}" \
@@ -52,21 +50,101 @@ process fastp {
         --overrepresentation_analysis \
         --html "${sample_id}_fastp.html" \
         --json "${sample_id}_fastp.json" \
-        --thread ${task.cpus}
+        --thread ${task.cpus} 
     """
+    // fastp use --thread while fastqc use --threads :((
+    // fastp: downgrade to v0.20.1 to in conda env!!
 }
 
 
-workflow {
-    read_fastas = Channel
-        .fromPath(params.reads).collate(params.batch_size)
-    read_fastps = Channel.fromFilePairs(params.pairs, flat: true) 
-        .map { sample_id, r1, r2 -> tuple(sample_id, [r1, r2]) }
-    read_fastps.view()
-  
-    //fastqc(read_fastas)
-    fastp(read_fastps)
-
+// align reads with STAR
+// mark duplicate reads with Picard from STAR 
+// assign reads to genes with featureCounts with bam file from Picard
+process star_align {
+    params.trimmed = "${params.outdir}/fastp/*_R{1,2}.trimmed.fastq.gz"
     
+    publishDir "${params.outdir}/star_alignment", mode: 'move'
+
+    input:
+    tuple val(sample_id), path(reads)
+
+    output:
+    tuple val(sample_id),
+        path("${sample_id}.Aligned.sortedByCoord.out.bam"),
+        path("${sample_id}.Log.final.out")
+
+    script:
+    """
+    STAR --runThreadN ${task.cpus} \
+        --genomeDir ${params.genomeDir} \
+        --readFilesIn ${reads.join(' ')} \
+        --outFileNamePrefix ${sample_id}. \
+        --outSAMtype BAM SortedByCoordinate \
+        --outReadsUnmapped Fastx \
+        --outFilterMatchNminOverLread 0.50 \
+        --outFilterScoreMinOverLread 0.50 \
+        --outSAMmapqUnique 40 \
+        --outFilterMultimapNmax 1
+    """
+}
+
+process mark_duplicates {
+    publishDir "${params.outdir}/deduplicate_bam", mode: 'move'
+
+    input:
+    tuple val(sample_id), path(bam), path(log_final)
+
+    output:
+    tuple val(sample_id),
+        path("${sample_id}.dedup.bam"),
+        path("${sample_id}.dedup.metrics.txt")
+
+    script:
+    """
+    picard MarkDuplicates \
+        I=${bam} \
+        O=${sample_id}.dedup.bam \
+        M=${sample_id}.dedup.metrics.txt \
+        CREATE_INDEX=true \
+        VALIDATION_STRINGENCY=SILENT
+    """
+}
+
+process feature_counts {
+    publishDir "${params.outdir}/featurecounts", mode: 'move'
+
+    input:
+    tuple val(sample_id), path(dedup_bam), path(metrics)
+
+    output:
+    tuple val(sample_id),
+        path("${sample_id}.counts.txt")
+
+    script:
+    """
+    featureCounts -T ${task.cpus} \
+        -p \
+        -t exon \
+        -g gene_id \
+        -a "${params.genomeDir}/Homo_sapiens.GRCh38.110.gtf" \
+        -o ${sample_id}.counts.txt \
+        ${dedup_bam}
+    """
+}
+
+workflow {
+    // read_fastas = Channel
+    //     .fromPath(params.reads).collate(params.batch_size)
+    // read_fastps = Channel.fromFilePairs(params.pairs, flat: true) 
+    //     .map { sample_id, r1, r2 -> tuple(sample_id, [r1, r2]) }
+    
+    //fastqc(read_fastas)
+    //fastp(read_fastps)
+
+    read_trimmed = Channel.fromFilePairs(params.trimmed, flat: true)
+        
+    aligned = star_align(read_trimmed)
+    deduped = mark_duplicates(aligned)
+    feature_counts(deduped)
 
 }
