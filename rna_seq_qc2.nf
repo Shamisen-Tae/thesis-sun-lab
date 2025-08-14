@@ -92,34 +92,30 @@ process mark_duplicates {
     publishDir "${params.outdir}/deduplicate_bam", mode: 'move'
 
     input:
-    tuple val(sample_id), path(bam)
+    path bam
 
     output:
-    tuple val(sample_id),
-        path("${sample_id}.dedup.bam"),
-        path("${sample_id}.dedup.metrics.txt")
+    tuple val(bam.baseName), path("${bam.baseName}.dedup.bam"), path("${bam.baseName}.dedup.metrics.txt")
 
     script:
     """
     picard MarkDuplicates \
         I=${bam} \
-        O=${sample_id}.dedup.bam \
-        M=${sample_id}.dedup.metrics.txt \
+        O=${bam.baseName}.dedup.bam \
+        M=${bam.baseName}.dedup.metrics.txt \
         CREATE_INDEX=true \
         VALIDATION_STRINGENCY=SILENT
     """
 }
 
-
 process feature_counts {
     publishDir "${params.outdir}/featurecounts", mode: 'move'
 
     input:
-    tuple val(sample_id), path(dedup_bam), path(metrics)
+    path dedup_bam
 
     output:
-    tuple val(sample_id),
-        path("${sample_id}.counts.txt")
+    path "${dedup_bam.baseName}.counts.txt"
 
     script:
     """
@@ -128,10 +124,12 @@ process feature_counts {
         -t exon \
         -g gene_id \
         -a "${params.genomeDir}/Homo_sapiens.GRCh38.110.gtf" \
-        -o ${sample_id}.counts.txt \
+        -o ${dedup_bam.baseName}.counts.txt \
         ${dedup_bam}
     """
 }
+
+
 
 workflow {
     // read_fastas = Channel
@@ -146,10 +144,15 @@ workflow {
   	//    .map { sample_id, r1, r2 -> tuple(sample_id, [r1, r2]) }   
     
 
-    params.aligned = "${params.arc_dir}/results/star_alignment/*.bam"
-    read_aligned = Channel.fromPath(params.aligned)
+   //params.aligned = "${params.arc_dir}/results/star_alignment/*.bam"
+   //read_aligned = Channel.fromPath(params.aligned)
 
-    deduped = mark_duplicates(read_aligned)
-    feature_counts(deduped)
+   //mark_duplicates(read_aligned)
+   params.deduped = "${params.outdir}/deduplicate_bam/*.bam"
+
+   deduped = Channel.fromPath(params.deduped)
+
+   feature_counts(deduped)
+
 
 }
