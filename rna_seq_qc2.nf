@@ -92,7 +92,7 @@ process mark_duplicates {
     publishDir "${params.outdir}/deduplicate_bam", mode: 'move'
 
     input:
-    tuple val(sample_id), path(bam), path(log_final)
+    tuple val(sample_id), path(bam)
 
     output:
     tuple val(sample_id),
@@ -109,6 +109,7 @@ process mark_duplicates {
         VALIDATION_STRINGENCY=SILENT
     """
 }
+
 
 process feature_counts {
     publishDir "${params.outdir}/featurecounts", mode: 'move'
@@ -141,10 +142,14 @@ workflow {
     //fastqc(read_fastas)
     //fastp(read_fastps)
 
-    read_trimmed = Channel.fromFilePairs(params.trimmed, flat: true)
-  	   .map { sample_id, r1, r2 -> tuple(sample_id, [r1, r2]) }   
-    aligned = star_align(read_trimmed)
-   //deduped = mark_duplicates(aligned)
-   //feature_counts(deduped)
+    // read_trimmed = Channel.fromFilePairs(params.trimmed, flat: true)
+  	//    .map { sample_id, r1, r2 -> tuple(sample_id, [r1, r2]) }   
+    
+
+    params.aligned = "${params.arc_dir}/results/star_alignment/*.bam"
+    read_aligned = Channel.fromPath(params.aligned)
+
+    deduped = mark_duplicates(read_aligned)
+    feature_counts(deduped)
 
 }
