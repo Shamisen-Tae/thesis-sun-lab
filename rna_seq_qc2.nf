@@ -4,6 +4,7 @@ params.reads = "${params.fasta_dir}/*.fastq.gz"
 params.outdir = "${params.arc_dir}/results"
 params.pairs = "${params.fasta_dir}/*_R{1,2}_001.fastq.gz"
 params.genomeDir = "${params.arc_dir}/hg38_index"
+params.trimmed = "${params.outdir}/fastp/*_R{1,2}.trimmed.fastq.gz"
 
 process fastqc {
     publishDir "${params.outdir}/fastqc", mode: 'move'
@@ -61,8 +62,6 @@ process fastp {
 // mark duplicate reads with Picard from STAR 
 // assign reads to genes with featureCounts with bam file from Picard
 process star_align {
-    params.trimmed = "${params.outdir}/fastp/*_R{1,2}.trimmed.fastq.gz"
-    
     publishDir "${params.outdir}/star_alignment", mode: 'move'
 
     input:
@@ -78,6 +77,7 @@ process star_align {
     STAR --runThreadN ${task.cpus} \
         --genomeDir ${params.genomeDir} \
         --readFilesIn ${reads.join(' ')} \
+        --readFilesCommand zcat \
         --outFileNamePrefix ${sample_id}. \
         --outSAMtype BAM SortedByCoordinate \
         --outReadsUnmapped Fastx \
@@ -142,9 +142,9 @@ workflow {
     //fastp(read_fastps)
 
     read_trimmed = Channel.fromFilePairs(params.trimmed, flat: true)
-        
+  	   .map { sample_id, r1, r2 -> tuple(sample_id, [r1, r2]) }   
     aligned = star_align(read_trimmed)
-    deduped = mark_duplicates(aligned)
-    feature_counts(deduped)
+   //deduped = mark_duplicates(aligned)
+   //feature_counts(deduped)
 
 }
